@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Road Trip Planner</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     :root {
       --green:         #2d7a3a;
@@ -330,35 +332,28 @@
     .lbl-gas  { color: var(--amber-dark); }
     .lbl-htl  { color: var(--purple); }
 
-    .place-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 7px;
-    }
-    .place-item:last-child { margin-bottom: 0; }
-    .place-name { flex: 1; font-size: 15px; font-weight: 500; }
-    .place-dist { font-size: 13px; color: var(--muted); white-space: nowrap; }
-
-    .place-cuisine {
-      font-size: 12px;
-      color: var(--muted);
-      font-weight: 400;
-      margin-left: 4px;
-    }
-
     .none {
       font-size: 14px;
       color: var(--muted);
     }
-    .api-err { font-size: 13px; color: #b71c1c; margin-bottom: 6px; }
-    a.ml { color: var(--navy); text-decoration: underline; }
 
     .btn-amber { background: var(--amber); color: white; }
 
     /* ─── Button row (e.g. chain restroom options) ─────────── */
     .btn-row { display: flex; gap: 8px; margin-top: 6px; }
     .btn-row .btn { flex: 1; text-align: center; }
+
+    /* ─── Route map ────────────────────────────────────────── */
+    #route-map {
+      height: 260px;
+      border-radius: 11px;
+      overflow: hidden;
+      margin-bottom: 14px;
+      border: 1px solid var(--border);
+    }
+
+    /* ─── Waypoints ─────────────────────────────────────────── */
+    .wp-row { margin-bottom: 8px; }
 
     /* ─── Nap window warning ───────────────────────────────── */
     .nap-banner {
@@ -455,6 +450,12 @@
 
       <hr>
 
+      <div class="sect-title">Waypoints (optional)</div>
+      <div id="wp-container"></div>
+      <button class="btn-add" id="wp-btn" onclick="addWaypoint()">+ Add a waypoint</button>
+
+      <hr>
+
       <div class="sect-title">Meal stops (optional)</div>
       <div id="meal-container"></div>
       <button class="btn-add" id="meal-btn" onclick="addMeal()">+ Add a meal stop</button>
@@ -512,6 +513,7 @@ Homewood Suites</textarea>
       <button class="btn btn-outline-navy" onclick="window.print()">Print</button>
     </div>
     <div id="summary"></div>
+    <div id="route-map"></div>
     <div id="cards"></div>
   </section>
 
@@ -533,7 +535,9 @@ const BDC   = 'https://api.bigdatacloud.net/data/reverse-geocode-client';
 // ── State ──────────────────────────────────────────────────
 let _gpsCoord   = null;   // set by "use my location"
 let _mealCount  = 0;
+let _wpCount    = 0;
 let _lastPlan   = null;   // saved for copyItinerary()
+let _map        = null;   // Leaflet instance
 
 // ── Fetch with timeout ─────────────────────────────────────
 async function apiFetch(url, timeoutMs = 15000, opts = {}) {
@@ -555,9 +559,10 @@ async function geocode(query) {
   return { lat: parseFloat(d[0].lat), lon: parseFloat(d[0].lon) };
 }
 
-// ── Routing (OSRM) ─────────────────────────────────────────
-async function getRoute(a, b) {
-  const url = `${OSRM}/${a.lon},${a.lat};${b.lon},${b.lat}?overview=full&geometries=geojson`;
+// ── Routing (OSRM) — accepts ordered array of {lat,lon} ────
+async function getRoute(points) {
+  const coords = points.map(p => `${p.lon},${p.lat}`).join(';');
+  const url = `${OSRM}/${coords}?overview=full&geometries=geojson`;
   const r = await apiFetch(url, 20000);
   const d = await r.json();
   if (d.code !== 'Ok' || !d.routes?.length) return null;
@@ -608,13 +613,6 @@ async function revGeo(lat, lon) {
   } catch { return 'Unknown location'; }
 }
 
-// ── Maps search helper (town-name anchored) ────────────────
-function mapsNear(query, locName) {
-  const q = locName && locName !== 'Unknown location'
-    ? `${query} near ${locName}`
-    : query;
-  return `https://www.google.com/maps/search/${encodeURIComponent(q)}`;
-}
 
 // ── Time zone estimate from longitude (US/Canada) ──────────
 function tzFor(lon) {
@@ -685,9 +683,6 @@ function mapsSearch(q, lat, lon) {
   return `https://www.google.com/maps/search/${encodeURIComponent(q)}/@${lat.toFixed(5)},${lon.toFixed(5)},13z`;
 }
 
-function mapsDir(lat, lon) {
-  return `https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}`;
-}
 
 // ── Nap window ─────────────────────────────────────────────
 function getNapWindow() {
@@ -727,6 +722,33 @@ function getMeals() {
     label: r.querySelector('.ml').value,
     time:  r.querySelector('.mt').value
   })).filter(m => m.time);
+}
+
+// ── Waypoints ──────────────────────────────────────────────
+function addWaypoint() {
+  if (_wpCount >= 5) return;
+  _wpCount++;
+  const row = document.createElement('div');
+  row.className = 'wp-row';
+  row.innerHTML = `
+    <div class="input-row">
+      <input type="text" class="wp-input" placeholder="City, State" autocomplete="off">
+      <button class="btn-x" onclick="removeWaypoint(this)">✕</button>
+    </div>`;
+  document.getElementById('wp-container').appendChild(row);
+  if (_wpCount >= 5) document.getElementById('wp-btn').disabled = true;
+}
+
+function removeWaypoint(btn) {
+  btn.closest('.wp-row').remove();
+  _wpCount--;
+  document.getElementById('wp-btn').disabled = false;
+}
+
+function getWaypoints() {
+  return [...document.querySelectorAll('.wp-input')]
+    .map(i => i.value.trim())
+    .filter(Boolean);
 }
 
 // ── Geolocation ────────────────────────────────────────────
@@ -781,16 +803,25 @@ async function planTrip() {
   try {
     showStatus('Finding your route…');
 
-    const [startCoord, endCoord] = await Promise.all([
+    const waypointVals = getWaypoints();
+
+    const [startCoord, endCoord, ...waypointCoords] = await Promise.all([
       _gpsCoord ? Promise.resolve(_gpsCoord) : geocode(startVal),
-      geocode(endVal)
+      geocode(endVal),
+      ...waypointVals.map(w => geocode(w))
     ]);
 
     if (!startCoord) { showStatus('Could not find starting location. Try "City, State" format.', true); return; }
     if (!endCoord)   { showStatus('Could not find destination. Try "City, State" format.', true); return; }
+    for (let i = 0; i < waypointVals.length; i++) {
+      if (!waypointCoords[i]) {
+        showStatus(`Could not find waypoint "${waypointVals[i]}". Try "City, State" format.`, true);
+        return;
+      }
+    }
 
     showStatus('Calculating route…');
-    const route = await getRoute(startCoord, endCoord);
+    const route = await getRoute([startCoord, ...waypointCoords, endCoord]);
     if (!route) { showStatus('Could not calculate route. Make sure both locations are drivable.', true); return; }
 
     const { coords, duration, distance } = route;
@@ -830,7 +861,7 @@ async function planTrip() {
 
     const startName = document.getElementById('start').value.trim();
     const endName   = document.getElementById('end').value.trim();
-    renderResults(stopData, duration, distance, startName, endName);
+    renderResults(stopData, duration, distance, coords, startName, endName);
 
   } catch (err) {
     showStatus('Something went wrong — check your connection and try again.', true);
@@ -841,8 +872,8 @@ async function planTrip() {
 }
 
 // ── Render results ─────────────────────────────────────────
-function renderResults(stopData, duration, distance, startName, endName) {
-  _lastPlan = { stopData, duration, distance, startName, endName };
+function renderResults(stopData, duration, distance, coords, startName, endName) {
+  _lastPlan = { stopData, duration, distance, coords, startName, endName };
   const mi = Math.round(distance / 1609.34);
 
   document.getElementById('summary').innerHTML = `
@@ -886,25 +917,26 @@ function renderResults(stopData, duration, distance, startName, endName) {
   clearStatus();
   document.getElementById('results').hidden = false;
   document.getElementById('foot').hidden = false;
+  setTimeout(() => renderMap(coords, stopData), 0);
   document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
 }
 
 function pgSection(s) {
   return `<div class="place">
     <div class="place-lbl lbl-pg">Playgrounds & Parks</div>
-    <a class="btn btn-full btn-green" href="${mapsNear('toddler playground', s.locName)}" target="_blank">Playgrounds near ${s.locName}</a>
+    <a class="btn btn-full btn-green" href="${mapsSearch('toddler playground', s.lat, s.lon)}" target="_blank">Playgrounds near ${s.locName}</a>
   </div>`;
 }
 
 function wcSection(s) {
   return `<div class="place">
     <div class="place-lbl lbl-wc">Restrooms</div>
-    <a class="btn btn-full btn-blue" href="${mapsNear('public restroom', s.locName)}" target="_blank">Public restrooms near ${s.locName}</a>
+    <a class="btn btn-full btn-blue" href="${mapsSearch('public restroom', s.lat, s.lon)}" target="_blank">Public restrooms near ${s.locName}</a>
     <div class="none" style="font-size:12px;margin:5px 0 4px;">Reliable clean options:</div>
     <div class="btn-row">
-      <a class="btn btn-sm btn-blue" href="${mapsNear('Starbucks', s.locName)}" target="_blank">Starbucks</a>
-      <a class="btn btn-sm btn-blue" href="${mapsNear('Chick-fil-A', s.locName)}" target="_blank">Chick-fil-A</a>
-      <a class="btn btn-sm btn-blue" href="${mapsNear("McDonald's", s.locName)}" target="_blank">McDonald's</a>
+      <a class="btn btn-sm btn-blue" href="${mapsSearch('Starbucks', s.lat, s.lon)}" target="_blank">Starbucks</a>
+      <a class="btn btn-sm btn-blue" href="${mapsSearch('Chick-fil-A', s.lat, s.lon)}" target="_blank">Chick-fil-A</a>
+      <a class="btn btn-sm btn-blue" href="${mapsSearch("McDonald's", s.lat, s.lon)}" target="_blank">McDonald's</a>
     </div>
   </div>`;
 }
@@ -918,8 +950,8 @@ function foodSection(s) {
   const foodLbl = mealLabel ? `Food — ${mealLabel}` : 'Food';
   return `<div class="place">
     <div class="place-lbl lbl-food">${foodLbl}</div>
-    <a class="btn btn-full btn-orange" href="${mapsNear(foodQuery, s.locName)}" target="_blank">${mealLabel || 'Family'} restaurants near ${s.locName}</a>
-    <a class="btn btn-full btn-orange" style="opacity:.8;margin-top:6px" href="${mapsNear('coffee cafe', s.locName)}" target="_blank">Coffee near ${s.locName}</a>
+    <a class="btn btn-full btn-orange" href="${mapsSearch(foodQuery, s.lat, s.lon)}" target="_blank">${mealLabel || 'Family'} restaurants near ${s.locName}</a>
+    <a class="btn btn-full btn-orange" style="opacity:.8;margin-top:6px" href="${mapsSearch('coffee cafe', s.lat, s.lon)}" target="_blank">Coffee near ${s.locName}</a>
   </div>`;
 }
 
@@ -938,8 +970,54 @@ function hotelSection(s) {
 function gasSection(s) {
   return `<div class="place">
     <div class="place-lbl lbl-gas">Gas</div>
-    <a class="btn btn-full btn-amber" href="${mapsNear('gas station', s.locName)}" target="_blank">Gas stations near ${s.locName}</a>
+    <a class="btn btn-full btn-amber" href="${mapsSearch('gas station', s.lat, s.lon)}" target="_blank">Gas stations near ${s.locName}</a>
   </div>`;
+}
+
+// ── Route map (Leaflet) ────────────────────────────────────
+function stopIcon(label, color) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="background:${color};color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,.35);font-family:-apple-system,sans-serif">${label}</div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -16]
+  });
+}
+
+function renderMap(coords, stopData) {
+  if (_map) { _map.remove(); _map = null; }
+
+  _map = L.map('route-map', { zoomControl: true, attributionControl: true });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19
+  }).addTo(_map);
+
+  // Route polyline — coords from OSRM are [lon, lat], Leaflet wants [lat, lon]
+  const latlngs = coords.map(c => [c[1], c[0]]);
+  const poly = L.polyline(latlngs, { color: '#1a237e', weight: 4, opacity: 0.85 }).addTo(_map);
+
+  // Start marker
+  const startPt = latlngs[0];
+  L.marker(startPt, { icon: stopIcon('S', '#2d7a3a') })
+    .bindPopup('<b>Start</b>')
+    .addTo(_map);
+
+  // Stop markers
+  stopData.forEach((s, i) => {
+    const isNight = s.isLast;
+    const isMeal  = s.meal && !isNight;
+    const color   = isNight ? '#6a1b9a' : isMeal ? '#e65100' : '#1a237e';
+    const label   = isNight ? 'N' : String(i + 1);
+    const badgeLbl = isNight ? 'Stop for night' : isMeal ? (s.label || 'Meal stop') : `Stop ${i + 1}`;
+    L.marker([s.lat, s.lon], { icon: stopIcon(label, color) })
+      .bindPopup(`<b>${badgeLbl}</b><br>${fmtTime(s.time, s.tz)}<br>${s.locName}`)
+      .addTo(_map);
+  });
+
+  _map.fitBounds(poly.getBounds(), { padding: [24, 24] });
 }
 
 // ── Copy itinerary to clipboard ────────────────────────────
