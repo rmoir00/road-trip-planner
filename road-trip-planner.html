@@ -14,6 +14,9 @@
       --orange-light:  #fff3e0;
       --purple:        #6a1b9a;
       --purple-light:  #f3e5f5;
+      --amber:         #f57c00;
+      --amber-light:   #fff3e0;
+      --amber-dark:    #e65100;
       --navy:          #1a237e;
       --border:        #e0e0e0;
       --bg:            #f0f2f8;
@@ -324,6 +327,7 @@
     .lbl-pg   { color: var(--green); }
     .lbl-wc   { color: var(--blue); }
     .lbl-food { color: var(--orange); }
+    .lbl-gas  { color: var(--amber-dark); }
     .lbl-htl  { color: var(--purple); }
 
     .place-item {
@@ -350,6 +354,33 @@
     .api-err { font-size: 13px; color: #b71c1c; margin-bottom: 6px; }
     a.ml { color: var(--navy); text-decoration: underline; }
 
+    .btn-amber { background: var(--amber); color: white; }
+
+    /* ─── Nap window warning ───────────────────────────────── */
+    .nap-banner {
+      background: #fff9c4;
+      border: 1px solid #f9a825;
+      border-radius: 8px;
+      padding: 9px 14px;
+      font-size: 13px;
+      color: #5d4037;
+      margin: 0 16px 10px;
+      text-align: center;
+    }
+
+    /* ─── Save/share buttons ───────────────────────────────── */
+    .action-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .action-row .btn { flex: 1; font-size: 14px; padding: 11px; }
+    .btn-outline-navy {
+      background: white;
+      border: 1.5px solid var(--navy);
+      color: var(--navy);
+    }
+
     /* ─── Footer note ──────────────────────────────────── */
     .foot-note {
       font-size: 12px;
@@ -357,6 +388,16 @@
       text-align: center;
       padding: 4px 0 24px;
       line-height: 1.7;
+    }
+
+    /* ─── Print styles ─────────────────────────────────────── */
+    @media print {
+      header, #form-section, #status, .btn-replan, .action-row, .foot-note { display: none !important; }
+      body { background: white; }
+      main { max-width: 100%; padding: 0; }
+      .stop-card { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; margin-bottom: 10px; }
+      .btn, a.btn { display: none !important; }
+      .summary-bar { border-radius: 0; }
     }
   </style>
 </head>
@@ -417,6 +458,25 @@
       <hr>
 
       <details>
+        <summary>Nap window (optional)</summary>
+        <div class="hotel-inner">
+          <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Stops that fall inside this window will be flagged — not skipped.</div>
+          <div class="row">
+            <div class="field">
+              <label>Nap starts</label>
+              <input type="time" id="nap-start">
+            </div>
+            <div class="field">
+              <label>Nap ends</label>
+              <input type="time" id="nap-end">
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <hr>
+
+      <details>
         <summary>Hotel preferences</summary>
         <div class="hotel-inner">
           <div class="field">
@@ -443,6 +503,10 @@ Homewood Suites</textarea>
   <!-- ── Results ── -->
   <section id="results" hidden>
     <button class="btn-replan" onclick="backToForm()">↑ Re-plan this trip</button>
+    <div class="action-row">
+      <button class="btn btn-outline-navy" onclick="copyItinerary()">Copy itinerary</button>
+      <button class="btn btn-outline-navy" onclick="window.print()">Print</button>
+    </div>
     <div id="summary"></div>
     <div id="cards"></div>
   </section>
@@ -464,8 +528,9 @@ const BDC   = 'https://api.bigdatacloud.net/data/reverse-geocode-client';
 const OVP   = 'https://overpass-api.de/api/interpreter';
 
 // ── State ──────────────────────────────────────────────────
-let _gpsCoord = null;   // set by "use my location"
-let _mealCount = 0;
+let _gpsCoord   = null;   // set by "use my location"
+let _mealCount  = 0;
+let _lastPlan   = null;   // saved for copyItinerary()
 
 // ── Fetch with timeout ─────────────────────────────────────
 async function apiFetch(url, timeoutMs = 15000, opts = {}) {
@@ -564,6 +629,7 @@ async function getPlaces(lat, lon) {
   const PG_R   = 5000;
   const WC_R   = 3000;
   const FOOD_R = 5000;
+  const GAS_R  = 5000;
   const q = `[out:json][timeout:25];(`
     + `node["amenity"="playground"](around:${PG_R},${lat},${lon});`
     + `way["amenity"="playground"](around:${PG_R},${lat},${lon});`
@@ -573,6 +639,8 @@ async function getPlaces(lat, lon) {
     + `way["amenity"="restaurant"]["name"](around:${FOOD_R},${lat},${lon});`
     + `node["amenity"="cafe"]["name"](around:${FOOD_R},${lat},${lon});`
     + `node["amenity"="fast_food"]["name"](around:${FOOD_R},${lat},${lon});`
+    + `node["amenity"="fuel"](around:${GAS_R},${lat},${lon});`
+    + `way["amenity"="fuel"](around:${GAS_R},${lat},${lon});`
     + `);out center tags;`;
 
   let lastErr = 'Unknown error';
@@ -592,7 +660,7 @@ async function getPlaces(lat, lon) {
         continue;
       }
 
-      const pg = [], wc = [], food = [], fastfood = [];
+      const pg = [], wc = [], food = [], fastfood = [], gas = [];
       for (const el of data.elements) {
         const elat = el.lat ?? el.center?.lat, elon = el.lon ?? el.center?.lon;
         if (!elat) continue;
@@ -614,6 +682,8 @@ async function getPlaces(lat, lon) {
           }
         } else if (amenity === 'fast_food') {
           fastfood.push({ lat: elat, lon: elon, name: name || 'Fast food', cuisine: el.tags?.cuisine || null, d });
+        } else if (amenity === 'fuel') {
+          gas.push({ lat: elat, lon: elon, name: name || 'Gas station', d });
         }
       }
 
@@ -621,7 +691,8 @@ async function getPlaces(lat, lon) {
       wc.sort((a,b) => a.d - b.d);
       food.sort((a,b) => a.d - b.d);
       fastfood.sort((a,b) => a.d - b.d);
-      return { pg: pg.slice(0,3), wc: wc.slice(0,2), food: food.slice(0,4), fastfood: fastfood.slice(0,4), apiOk: true };
+      gas.sort((a,b) => a.d - b.d);
+      return { pg: pg.slice(0,3), wc: wc.slice(0,2), food: food.slice(0,4), fastfood: fastfood.slice(0,4), gas: gas.slice(0,3), apiOk: true };
 
     } catch (e) {
       lastErr = e.message;
@@ -630,7 +701,7 @@ async function getPlaces(lat, lon) {
   }
 
   console.error('All Overpass mirrors failed. Last error:', lastErr);
-  return { pg: [], wc: [], food: [], fastfood: [], apiOk: false, apiErr: lastErr };
+  return { pg: [], wc: [], food: [], fastfood: [], gas: [], apiOk: false, apiErr: lastErr };
 }
 
 // ── Time zone estimate from longitude (US/Canada) ──────────
@@ -707,6 +778,16 @@ function mapsSearch(q, lat, lon) {
 
 function mapsDir(lat, lon) {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}`;
+}
+
+// ── Nap window ─────────────────────────────────────────────
+function getNapWindow() {
+  const s = document.getElementById('nap-start').value;
+  const e = document.getElementById('nap-end').value;
+  if (!s || !e) return null;
+  const start = toMs(s), end = toMs(e);
+  if (end <= start) return null;
+  return { start, end };
 }
 
 // ── Form: add meal stop ────────────────────────────────────
@@ -812,8 +893,9 @@ async function planTrip() {
       return;
     }
 
-    const detour = parseInt(document.getElementById('detour').value) || 10;
-    const brands = document.getElementById('brands').value.split('\n').map(b=>b.trim()).filter(Boolean);
+    const detour   = parseInt(document.getElementById('detour').value) || 10;
+    const brands   = document.getElementById('brands').value.split('\n').map(b=>b.trim()).filter(Boolean);
+    const napWindow = getNapWindow();
 
     const stopData = [];
     for (let i = 0; i < stops.length; i++) {
@@ -822,6 +904,9 @@ async function planTrip() {
       const pos    = routePos(coords, duration, (s.time - depMs) / 1000);
       const tz     = tzFor(pos.lon);
       const isLast = i === stops.length - 1;
+      const napInWindow = napWindow
+        ? s.time >= napWindow.start && s.time <= napWindow.end
+        : false;
 
       const [locName, places] = await Promise.all([
         revGeo(pos.lat, pos.lon),
@@ -829,7 +914,7 @@ async function planTrip() {
       ]);
 
       stopData.push({
-        ...s, ...pos, tz, locName, places, isLast,
+        ...s, ...pos, tz, locName, places, isLast, napInWindow,
         detour: isLast ? detour : null,
         brands: isLast ? brands : null
       });
@@ -837,7 +922,9 @@ async function planTrip() {
       if (i < stops.length - 1) await pause(350);
     }
 
-    renderResults(stopData, duration, distance);
+    const startName = document.getElementById('start').value.trim();
+    const endName   = document.getElementById('end').value.trim();
+    renderResults(stopData, duration, distance, startName, endName);
 
   } catch (err) {
     showStatus('Something went wrong — check your connection and try again.', true);
@@ -848,7 +935,8 @@ async function planTrip() {
 }
 
 // ── Render results ─────────────────────────────────────────
-function renderResults(stopData, duration, distance) {
+function renderResults(stopData, duration, distance, startName, endName) {
+  _lastPlan = { stopData, duration, distance, startName, endName };
   const mi = Math.round(distance / 1609.34);
 
   document.getElementById('summary').innerHTML = `
@@ -880,8 +968,10 @@ function renderResults(stopData, duration, distance) {
             <div class="stop-loc">${s.locName}</div>
           </div>
         </div>
+        ${s.napInWindow ? '<div class="nap-banner">⚠️ This stop falls in your nap window — consider staying in the car or driving through</div>' : ''}
         ${pgSection(s)}
         ${wcSection(s)}
+        ${gasSection(s)}
         ${foodSection(s)}
         ${s.isLast ? hotelSection(s) : ''}
       </div>`;
@@ -995,6 +1085,59 @@ function hotelSection(s) {
        href="${mapsSearch('family friendly hotel', s.lat, s.lon)}"
        target="_blank">All family hotels</a>
   </div>`;
+}
+
+function gasSection(s) {
+  const lbl     = '<div class="place-lbl lbl-gas">Gas</div>';
+  const mapsBtn = `<a class="btn btn-full btn-amber" href="${mapsSearch('gas station', s.lat, s.lon)}" target="_blank">Find gas stations nearby</a>`;
+  if (!s.places.apiOk) {
+    return `<div class="place">${lbl}${mapsBtn}</div>`;
+  }
+  if (!s.places.gas.length) {
+    return `<div class="place">${lbl}
+      <div class="none" style="margin-bottom:8px;">None found in map data &mdash;</div>
+      ${mapsBtn}
+    </div>`;
+  }
+  return `<div class="place">${lbl}${s.places.gas.map(g => `
+    <div class="place-item">
+      <div class="place-name">${g.name}</div>
+      <div class="place-dist">${distStr(g.d)}</div>
+      <a class="btn btn-sm btn-amber" href="${mapsDir(g.lat, g.lon)}" target="_blank">Go</a>
+    </div>`).join('')}
+    <div style="margin-top:8px;">${mapsBtn}</div>
+  </div>`;
+}
+
+// ── Copy itinerary to clipboard ────────────────────────────
+function copyItinerary() {
+  if (!_lastPlan) return;
+  const { stopData, duration, distance, startName, endName } = _lastPlan;
+  const mi = Math.round(distance / 1609.34);
+  const lines = [
+    `ROAD TRIP: ${startName} → ${endName}`,
+    `${hhmm(duration)} drive · ${mi} miles · ${stopData.length} stop${stopData.length !== 1 ? 's' : ''}`,
+    ''
+  ];
+  stopData.forEach((s, i) => {
+    const timeStr  = fmtTime(s.time, s.tz);
+    const label    = s.isLast ? 'Stop for night' : s.meal ? (s.label || 'Meal stop') : `Stop ${i + 1}`;
+    lines.push(`── ${label} · ${timeStr} ──`);
+    lines.push(s.locName);
+    if (s.napInWindow) lines.push('⚠ Nap window — consider driving through');
+    if (s.places.pg.length)  lines.push('Playground: ' + s.places.pg[0].name);
+    if (s.places.wc.length)  lines.push('Restroom: '   + s.places.wc[0].name);
+    if (s.places.gas.length) lines.push('Gas: '        + s.places.gas[0].name + ' (' + distStr(s.places.gas[0].d) + ')');
+    if (s.places.food.length) lines.push('Food: '      + s.places.food.slice(0,2).map(f => f.name).join(', '));
+    lines.push('');
+  });
+
+  navigator.clipboard.writeText(lines.join('\n')).then(() => {
+    const btn = document.querySelector('.action-row .btn');
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => alert('Copy failed — try selecting and copying the page manually.'));
 }
 </script>
 </body>
