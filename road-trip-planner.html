@@ -554,11 +554,16 @@ const FAST_FOOD = new Set([
 ]);
 
 // ── Places (Overpass API) ──────────────────────────────────
-// Uses GET (not POST) so it works from file:// origins in all browsers.
+// Tries two public Overpass mirrors in sequence; returns on first success.
+const OVP_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter'
+];
+
 async function getPlaces(lat, lon) {
-  const PG_R   = 5000; // playground search radius (metres)
-  const WC_R   = 3000; // restroom radius
-  const FOOD_R = 5000; // restaurant radius
+  const PG_R   = 5000;
+  const WC_R   = 3000;
+  const FOOD_R = 5000;
   const q = `[out:json][timeout:25];(`
     + `node["amenity"="playground"](around:${PG_R},${lat},${lon});`
     + `way["amenity"="playground"](around:${PG_R},${lat},${lon});`
@@ -570,49 +575,62 @@ async function getPlaces(lat, lon) {
     + `node["amenity"="fast_food"]["name"](around:${FOOD_R},${lat},${lon});`
     + `);out center tags;`;
 
-  try {
-    const r = await apiFetch(`${OVP}?data=${encodeURIComponent(q)}`, 30000);
-    if (!r.ok) throw new Error(`Overpass HTTP ${r.status}`);
-    const data = await r.json();
-    const pg = [], wc = [], food = [], fastfood = [];
+  let lastErr = 'Unknown error';
 
-    for (const el of data.elements) {
-      const elat = el.lat ?? el.center?.lat, elon = el.lon ?? el.center?.lon;
-      if (!elat) continue;
-      const d       = hav(lat, lon, elat, elon);
-      const name    = el.tags?.name ?? null;
-      const amenity = el.tags?.amenity;
-
-      if (amenity === 'playground') {
-        pg.push({ lat: elat, lon: elon, name, d });
-      } else if (amenity === 'toilets') {
-        wc.push({ lat: elat, lon: elon, name, d });
-      } else if (amenity === 'restaurant' || amenity === 'cafe') {
-        const nm      = (name || '').toLowerCase().trim();
-        const cuisine = (el.tags?.cuisine || '').toLowerCase();
-        if (!FAST_FOOD.has(nm) && !cuisine.includes('fast_food')) {
-          food.push({
-            lat: elat, lon: elon, name: name || 'Restaurant',
-            cuisine: el.tags?.cuisine || null, d
-          });
-        } else {
-          // Filtered sit-down place is fast food — put in fallback list
-          fastfood.push({ lat: elat, lon: elon, name: name || 'Restaurant', cuisine: el.tags?.cuisine || null, d });
-        }
-      } else if (amenity === 'fast_food') {
-        fastfood.push({ lat: elat, lon: elon, name: name || 'Fast food', cuisine: el.tags?.cuisine || null, d });
+  for (const mirror of OVP_MIRRORS) {
+    try {
+      const r = await apiFetch(`${mirror}?data=${encodeURIComponent(q)}`, 30000);
+      if (!r.ok) {
+        lastErr = `HTTP ${r.status} from ${mirror}`;
+        console.warn(lastErr);
+        continue;
       }
-    }
+      const data = await r.json();
+      if (!Array.isArray(data.elements)) {
+        lastErr = 'Unexpected response format';
+        console.warn(lastErr, data);
+        continue;
+      }
 
-    pg.sort((a,b) => a.d - b.d);
-    wc.sort((a,b) => a.d - b.d);
-    food.sort((a,b) => a.d - b.d);
-    fastfood.sort((a,b) => a.d - b.d);
-    return { pg: pg.slice(0,3), wc: wc.slice(0,2), food: food.slice(0,4), fastfood: fastfood.slice(0,4), apiOk: true };
-  } catch (e) {
-    console.warn('Overpass API error:', e.message);
-    return { pg: [], wc: [], food: [], fastfood: [], apiOk: false };
+      const pg = [], wc = [], food = [], fastfood = [];
+      for (const el of data.elements) {
+        const elat = el.lat ?? el.center?.lat, elon = el.lon ?? el.center?.lon;
+        if (!elat) continue;
+        const d       = hav(lat, lon, elat, elon);
+        const name    = el.tags?.name ?? null;
+        const amenity = el.tags?.amenity;
+
+        if (amenity === 'playground') {
+          pg.push({ lat: elat, lon: elon, name, d });
+        } else if (amenity === 'toilets') {
+          wc.push({ lat: elat, lon: elon, name, d });
+        } else if (amenity === 'restaurant' || amenity === 'cafe') {
+          const nm      = (name || '').toLowerCase().trim();
+          const cuisine = (el.tags?.cuisine || '').toLowerCase();
+          if (!FAST_FOOD.has(nm) && !cuisine.includes('fast_food')) {
+            food.push({ lat: elat, lon: elon, name: name || 'Restaurant', cuisine: el.tags?.cuisine || null, d });
+          } else {
+            fastfood.push({ lat: elat, lon: elon, name: name || 'Restaurant', cuisine: el.tags?.cuisine || null, d });
+          }
+        } else if (amenity === 'fast_food') {
+          fastfood.push({ lat: elat, lon: elon, name: name || 'Fast food', cuisine: el.tags?.cuisine || null, d });
+        }
+      }
+
+      pg.sort((a,b) => a.d - b.d);
+      wc.sort((a,b) => a.d - b.d);
+      food.sort((a,b) => a.d - b.d);
+      fastfood.sort((a,b) => a.d - b.d);
+      return { pg: pg.slice(0,3), wc: wc.slice(0,2), food: food.slice(0,4), fastfood: fastfood.slice(0,4), apiOk: true };
+
+    } catch (e) {
+      lastErr = e.message;
+      console.warn(`Overpass error (${mirror}):`, e.message);
+    }
   }
+
+  console.error('All Overpass mirrors failed. Last error:', lastErr);
+  return { pg: [], wc: [], food: [], fastfood: [], apiOk: false, apiErr: lastErr };
 }
 
 // ── Time zone estimate from longitude (US/Canada) ──────────
