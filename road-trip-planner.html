@@ -579,7 +579,7 @@ async function getPlaces(lat, lon) {
 
   for (const mirror of OVP_MIRRORS) {
     try {
-      const r = await apiFetch(`${mirror}?data=${encodeURIComponent(q)}`, 30000);
+      const r = await apiFetch(`${mirror}?data=${encodeURIComponent(q)}`, 8000);
       if (!r.ok) {
         lastErr = `HTTP ${r.status} from ${mirror}`;
         console.warn(lastErr);
@@ -897,8 +897,7 @@ function pgSection(s) {
   const lbl = '<div class="place-lbl lbl-pg">Playgrounds</div>';
   if (!s.places.apiOk) {
     return `<div class="place">${lbl}
-      <div class="api-err">Couldn't load nearby data</div>
-      <a class="ml" href="${mapsSearch('playground park', s.lat, s.lon)}" target="_blank">Search in Maps instead</a>
+      <a class="btn btn-full btn-green" href="${mapsSearch('playground park toddler', s.lat, s.lon)}" target="_blank">Search playgrounds in Maps</a>
     </div>`;
   }
   if (!s.places.pg.length) {
@@ -914,14 +913,14 @@ function pgSection(s) {
 }
 
 function wcSection(s) {
-  const lbl     = '<div class="place-lbl lbl-wc">Restrooms</div>';
+  const lbl      = '<div class="place-lbl lbl-wc">Restrooms</div>';
   const cleanTip = `<div class="none" style="margin-top:8px;font-size:13px;">
     Also reliable: <a class="ml" href="${mapsSearch("McDonald's OR Chick-fil-A OR Starbucks", s.lat, s.lon)}" target="_blank">McDonald's, Chick-fil-A, Starbucks</a>
   </div>`;
 
   if (!s.places.apiOk) {
     return `<div class="place">${lbl}
-      <a class="ml" href="${mapsSearch('public restroom', s.lat, s.lon)}" target="_blank">Search in Maps</a>
+      <a class="btn btn-full btn-blue" href="${mapsSearch('public restroom', s.lat, s.lon)}" target="_blank">Search restrooms in Maps</a>
       ${cleanTip}
     </div>`;
   }
@@ -952,10 +951,7 @@ function foodSection(s) {
     target="_blank">Find more restaurants in Maps</a>`;
 
   if (!s.places.apiOk) {
-    return `<div class="place">${lbl}
-      <div class="api-err">Couldn't load nearby data</div>
-      ${fallback}
-    </div>`;
+    return `<div class="place">${lbl}${fallback}</div>`;
   }
   if (!s.places.food.length) {
     // Fall back to fast food when no sit-down options found
