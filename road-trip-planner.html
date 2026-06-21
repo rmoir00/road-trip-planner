@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Road Trip Planner</title>
+  <style>
+    :root {
+      --green:         #2d7a3a;
+      --green-light:   #e8f5e9;
+      --blue:          #1565c0;
+      --blue-light:    #e3f2fd;
+      --orange:        #e65100;
+      --orange-light:  #fff3e0;
+      --purple:        #6a1b9a;
+      --purple-light:  #f3e5f5;
+      --navy:          #1a237e;
+      --border:        #e0e0e0;
+      --bg:            #f0f2f8;
+      --card:          #ffffff;
+      --text:          #212121;
+      --muted:         #757575;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    /* ─── Header ───────────────────────────────────────── */
+    header {
+      background: var(--navy);
+      color: white;
+      padding: 18px 20px 14px;
+      text-align: center;
+    }
+    header h1 { font-size: 21px; font-weight: 700; letter-spacing: -0.3px; }
+    header p  { font-size: 13px; opacity: .75; margin-top: 3px; }
+
+    /* ─── Layout ───────────────────────────────────────── */
+    main {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    /* ─── Form card ────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.09);
+      margin-bottom: 14px;
+    }
+
+    .field { margin-bottom: 16px; }
+    .field:last-child { margin-bottom: 0; }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    input[type="text"],
+    input[type="time"],
+    input[type="number"],
+    select, textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      font-size: 16px;
+      color: var(--text);
+      background: white;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--navy);
+    }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    .input-row { display: flex; gap: 8px; }
+    .input-row input { flex: 1; }
+    .btn-loc {
+      padding: 0 14px;
+      font-size: 20px;
+      background: #eef0fb;
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      cursor: pointer;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+
+    .sect-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    /* ─── Meal stops ───────────────────────────────────── */
+    .meal-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .meal-row select { flex: 1; padding: 10px 12px; font-size: 15px; }
+    .meal-row input[type="time"] { width: 128px; flex-shrink: 0; padding: 10px 12px; font-size: 15px; }
+    .btn-x {
+      background: #ffebee;
+      border: none;
+      border-radius: 7px;
+      padding: 10px 13px;
+      cursor: pointer;
+      color: #c62828;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    /* ─── Hotel prefs (collapsible) ────────────────────── */
+    details { margin-top: 2px; }
+    summary {
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--navy);
+      padding: 6px 0;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      user-select: none;
+    }
+    summary::before { content: '▸'; display: inline-block; transition: transform .2s; }
+    details[open] summary::before { transform: rotate(90deg); }
+    .hotel-inner { margin-top: 12px; }
+    textarea { resize: none; height: 96px; font-size: 15px; }
+
+    /* ─── Buttons ──────────────────────────────────────── */
+    .btn {
+      display: inline-block;
+      padding: 13px 16px;
+      border: none;
+      border-radius: 9px;
+      font-size: 15px;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      text-decoration: none;
+      transition: opacity .15s;
+      line-height: 1.2;
+    }
+    .btn:active { opacity: .7; }
+
+    .btn-primary {
+      background: var(--navy);
+      color: white;
+      width: 100%;
+      font-size: 17px;
+      padding: 15px;
+      margin-top: 6px;
+      letter-spacing: -.2px;
+    }
+    .btn-primary:disabled { background: #9fa8da; cursor: not-allowed; opacity: 1; }
+
+    .btn-add {
+      background: none;
+      border: 1.5px dashed var(--border);
+      color: var(--muted);
+      width: 100%;
+      padding: 9px;
+      font-size: 14px;
+      border-radius: 9px;
+      cursor: pointer;
+      margin-top: 2px;
+    }
+    .btn-add:disabled { opacity: .4; cursor: not-allowed; }
+
+    .btn-sm   { padding: 6px 13px; font-size: 13px; border-radius: 7px; }
+    .btn-full { width: 100%; margin-bottom: 8px; }
+
+    .btn-green  { background: var(--green);  color: white; }
+    .btn-blue   { background: var(--blue);   color: white; }
+    .btn-orange { background: var(--orange); color: white; }
+    .btn-purple { background: var(--purple); color: white; }
+    .btn-purple-o {
+      background: white;
+      color: var(--purple);
+      border: 1.5px solid var(--purple);
+    }
+
+    .btn-replan {
+      background: white;
+      border: 1.5px solid var(--navy);
+      color: var(--navy);
+      width: 100%;
+      padding: 11px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 9px;
+      cursor: pointer;
+      margin-bottom: 14px;
+    }
+
+    /* ─── Status message ───────────────────────────────── */
+    #status {
+      background: #e8eaf6;
+      border-radius: 9px;
+      padding: 13px 16px;
+      font-size: 15px;
+      text-align: center;
+      margin-bottom: 14px;
+    }
+    #status.err { background: #ffebee; color: #b71c1c; }
+
+    /* ─── Trip summary bar ─────────────────────────────── */
+    .summary-bar {
+      background: var(--navy);
+      color: white;
+      border-radius: 11px;
+      padding: 13px 16px;
+      display: flex;
+      justify-content: space-around;
+      text-align: center;
+      margin-bottom: 14px;
+    }
+    .summary-bar span { font-size: 14px; font-weight: 600; }
+    .summary-bar small { display: block; font-size: 11px; font-weight: 400; opacity: .7; margin-top: 1px; }
+
+    /* ─── TZ banner ────────────────────────────────────── */
+    .tz-banner {
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 8px;
+      padding: 9px 14px;
+      font-size: 13px;
+      color: #5d4037;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    /* ─── Stop card ────────────────────────────────────── */
+    .stop-card {
+      background: var(--card);
+      border-radius: 14px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.09);
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .stop-card.night { border: 2px solid var(--purple); }
+
+    .stop-head {
+      background: #f5f6fc;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .stop-time {
+      font-size: 23px;
+      font-weight: 700;
+      color: var(--navy);
+      white-space: nowrap;
+      letter-spacing: -.5px;
+    }
+    .stop-info { flex: 1; min-width: 0; }
+    .stop-loc {
+      font-size: 15px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-bottom: 3px;
+    }
+    .b-stop   { background: #e8eaf6; color: #3949ab; }
+    .b-meal   { background: var(--orange-light); color: var(--orange); }
+    .b-night  { background: var(--purple-light); color: var(--purple); }
+
+    /* ─── Place sections ───────────────────────────────── */
+    .place {
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .place:last-child { border-bottom: none; }
+    .place.hotels { background: var(--purple-light); }
+
+    .place-lbl {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      margin-bottom: 9px;
+    }
+    .lbl-pg   { color: var(--green); }
+    .lbl-wc   { color: var(--blue); }
+    .lbl-food { color: var(--orange); }
+    .lbl-htl  { color: var(--purple); }
+
+    .place-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 7px;
+    }
+    .place-item:last-child { margin-bottom: 0; }
+    .place-name { flex: 1; font-size: 15px; font-weight: 500; }
+    .place-dist { font-size: 13px; color: var(--muted); white-space: nowrap; }
+
+    .place-cuisine {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 400;
+      margin-left: 4px;
+    }
+
+    .none {
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .api-err { font-size: 13px; color: #b71c1c; margin-bottom: 6px; }
+    a.ml { color: var(--navy); text-decoration: underline; }
+
+    /* ─── Footer note ──────────────────────────────────── */
+    .foot-note {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      padding: 4px 0 24px;
+      line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Road Trip Planner</h1>
+  <p>Toddler-friendly stops along your route</p>
+</header>
+
+<main>
+
+  <!-- ── Form ── -->
+  <section id="form-section">
+    <div class="card">
+
+      <div class="field">
+        <label>Starting from</label>
+        <div class="input-row">
+          <input type="text" id="start" placeholder="Boston, MA" autocomplete="off">
+          <button class="btn-loc" onclick="useMyLocation()" title="Use current location">📍</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Destination</label>
+        <input type="text" id="end" placeholder="Philadelphia, PA" autocomplete="off">
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Departure time</label>
+          <input type="time" id="dep" value="09:00">
+        </div>
+        <div class="field">
+          <label>Stop for night by</label>
+          <input type="time" id="night" value="19:00">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Stop every</label>
+        <select id="interval">
+          <option value="1">1 hour</option>
+          <option value="1.5">1.5 hours</option>
+          <option value="2" selected>2 hours</option>
+          <option value="2.5">2.5 hours</option>
+          <option value="3">3 hours</option>
+        </select>
+      </div>
+
+      <hr>
+
+      <div class="sect-title">Meal stops (optional)</div>
+      <div id="meal-container"></div>
+      <button class="btn-add" id="meal-btn" onclick="addMeal()">+ Add a meal stop</button>
+
+      <hr>
+
+      <details>
+        <summary>Hotel preferences</summary>
+        <div class="hotel-inner">
+          <div class="field">
+            <label>Max detour off route (minutes)</label>
+            <input type="number" id="detour" value="10" min="2" max="30">
+          </div>
+          <div class="field">
+            <label>Preferred brands — one per line</label>
+            <textarea id="brands">Courtyard Marriott
+Residence Inn
+Hampton Inn
+Homewood Suites</textarea>
+          </div>
+        </div>
+      </details>
+
+      <button class="btn btn-primary" id="plan-btn" onclick="planTrip()">Plan My Trip</button>
+    </div>
+  </section>
+
+  <!-- ── Status ── -->
+  <div id="status" hidden></div>
+
+  <!-- ── Results ── -->
+  <section id="results" hidden>
+    <button class="btn-replan" onclick="backToForm()">↑ Re-plan this trip</button>
+    <div id="summary"></div>
+    <div id="cards"></div>
+  </section>
+
+  <p class="foot-note" id="foot" hidden>
+    Playground, restroom &amp; restaurant data from OpenStreetMap — coverage varies in rural areas.<br>
+    Fast food chains are filtered out. Hotel links open Google Maps. Times are estimated local time zone.
+  </p>
+
+</main>
+
+<script>
+'use strict';
+
+// ── API endpoints ──────────────────────────────────────────
+const NOM   = 'https://nominatim.openstreetmap.org/search';
+const OSRM  = 'https://router.project-osrm.org/route/v1/driving';
+const BDC   = 'https://api.bigdatacloud.net/data/reverse-geocode-client';
+const OVP   = 'https://overpass-api.de/api/interpreter';
+
+// ── State ──────────────────────────────────────────────────
+let _gpsCoord = null;   // set by "use my location"
+let _mealCount = 0;
+
+// ── Fetch with timeout ─────────────────────────────────────
+async function apiFetch(url, timeoutMs = 15000, opts = {}) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// ── Geocoding (Nominatim) ──────────────────────────────────
+async function geocode(query) {
+  const url = `${NOM}?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=us,ca`;
+  const r = await apiFetch(url);
+  const d = await r.json();
+  if (!d.length) return null;
+  return { lat: parseFloat(d[0].lat), lon: parseFloat(d[0].lon) };
+}
+
+// ── Routing (OSRM) ─────────────────────────────────────────
+async function getRoute(a, b) {
+  const url = `${OSRM}/${a.lon},${a.lat};${b.lon},${b.lat}?overview=full&geometries=geojson`;
+  const r = await apiFetch(url, 20000);
+  const d = await r.json();
+  if (d.code !== 'Ok' || !d.routes?.length) return null;
+  const rt = d.routes[0];
+  return {
+    coords:   rt.geometry.coordinates, // [[lon,lat],...]
+    duration: rt.duration,             // seconds
+    distance: rt.distance              // metres
+  };
+}
+
+// ── Haversine distance (metres) ────────────────────────────
+function hav(la1, lo1, la2, lo2) {
+  const R = 6371000, p1 = la1*Math.PI/180, p2 = la2*Math.PI/180;
+  const dp = (la2-la1)*Math.PI/180, dl = (lo2-lo1)*Math.PI/180;
+  const a = Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ── Interpolate position along route at elapsed seconds ────
+function routePos(coords, totalSecs, elapsedSecs) {
+  const frac = Math.min(Math.max(elapsedSecs / totalSecs, 0), 1);
+  const cum = [0];
+  for (let i = 1; i < coords.length; i++)
+    cum.push(cum[i-1] + hav(coords[i-1][1], coords[i-1][0], coords[i][1], coords[i][0]));
+  const target = frac * cum[cum.length-1];
+  for (let i = 1; i < coords.length; i++) {
+    if (cum[i] >= target) {
+      const seg = cum[i] - cum[i-1];
+      const sf  = seg > 0 ? (target - cum[i-1]) / seg : 0;
+      return {
+        lat: coords[i-1][1] + sf * (coords[i][1] - coords[i-1][1]),
+        lon: coords[i-1][0] + sf * (coords[i][0] - coords[i-1][0])
+      };
+    }
+  }
+  return { lat: coords.at(-1)[1], lon: coords.at(-1)[0] };
+}
+
+// ── Reverse geocode + location name (BigDataCloud) ─────────
+async function revGeo(lat, lon) {
+  try {
+    const r = await apiFetch(`${BDC}?latitude=${lat}&longitude=${lon}&localityLanguage=en`, 6000);
+    const d = await r.json();
+    const name  = d.city || d.locality || '';
+    const state = d.principalSubdivision || '';
+    return [name, state].filter(Boolean).join(', ') || 'Unknown location';
+  } catch { return 'Unknown location'; }
+}
+
+// ── Fast food blocklist (OSM amenity=restaurant may include these) ─
+// Chick-fil-A intentionally excluded — reliable clean restrooms + acceptable food option
+const FAST_FOOD = new Set([
+  "mcdonald's","mcdonalds","burger king","wendy's","wendys","taco bell",
+  "kfc","subway","pizza hut","popeyes",
+  "domino's","dominos","sonic","hardee's","hardees","carl's jr","carls jr",
+  "jack in the box","arby's","arbys","little caesars","dairy queen","whataburger",
+  "in-n-out burger","in-n-out","wingstop","raising cane's","el pollo loco",
+  "del taco","church's chicken","long john silver's","captain d's","checkers",
+  "rally's","steak 'n shake","steak n shake","culver's","culvers","shake shack",
+  "five guys","bojangles","zaxby's","freddy's","smashburger","habit burger"
+]);
+
+// ── Places (Overpass API) ──────────────────────────────────
+// Uses GET (not POST) so it works from file:// origins in all browsers.
+async function getPlaces(lat, lon) {
+  const PG_R   = 5000; // playground search radius (metres)
+  const WC_R   = 3000; // restroom radius
+  const FOOD_R = 5000; // restaurant radius
+  const q = `[out:json][timeout:25];(`
+    + `node["amenity"="playground"](around:${PG_R},${lat},${lon});`
+    + `way["amenity"="playground"](around:${PG_R},${lat},${lon});`
+    + `node["amenity"="toilets"](around:${WC_R},${lat},${lon});`
+    + `way["amenity"="toilets"](around:${WC_R},${lat},${lon});`
+    + `node["amenity"="restaurant"]["name"](around:${FOOD_R},${lat},${lon});`
+    + `way["amenity"="restaurant"]["name"](around:${FOOD_R},${lat},${lon});`
+    + `node["amenity"="cafe"]["name"](around:${FOOD_R},${lat},${lon});`
+    + `node["amenity"="fast_food"]["name"](around:${FOOD_R},${lat},${lon});`
+    + `);out center tags;`;
+
+  try {
+    const r = await apiFetch(`${OVP}?data=${encodeURIComponent(q)}`, 30000);
+    if (!r.ok) throw new Error(`Overpass HTTP ${r.status}`);
+    const data = await r.json();
+    const pg = [], wc = [], food = [], fastfood = [];
+
+    for (const el of data.elements) {
+      const elat = el.lat ?? el.center?.lat, elon = el.lon ?? el.center?.lon;
+      if (!elat) continue;
+      const d       = hav(lat, lon, elat, elon);
+      const name    = el.tags?.name ?? null;
+      const amenity = el.tags?.amenity;
+
+      if (amenity === 'playground') {
+        pg.push({ lat: elat, lon: elon, name, d });
+      } else if (amenity === 'toilets') {
+        wc.push({ lat: elat, lon: elon, name, d });
+      } else if (amenity === 'restaurant' || amenity === 'cafe') {
+        const nm      = (name || '').toLowerCase().trim();
+        const cuisine = (el.tags?.cuisine || '').toLowerCase();
+        if (!FAST_FOOD.has(nm) && !cuisine.includes('fast_food')) {
+          food.push({
+            lat: elat, lon: elon, name: name || 'Restaurant',
+            cuisine: el.tags?.cuisine || null, d
+          });
+        } else {
+          // Filtered sit-down place is fast food — put in fallback list
+          fastfood.push({ lat: elat, lon: elon, name: name || 'Restaurant', cuisine: el.tags?.cuisine || null, d });
+        }
+      } else if (amenity === 'fast_food') {
+        fastfood.push({ lat: elat, lon: elon, name: name || 'Fast food', cuisine: el.tags?.cuisine || null, d });
+      }
+    }
+
+    pg.sort((a,b) => a.d - b.d);
+    wc.sort((a,b) => a.d - b.d);
+    food.sort((a,b) => a.d - b.d);
+    fastfood.sort((a,b) => a.d - b.d);
+    return { pg: pg.slice(0,3), wc: wc.slice(0,2), food: food.slice(0,4), fastfood: fastfood.slice(0,4), apiOk: true };
+  } catch (e) {
+    console.warn('Overpass API error:', e.message);
+    return { pg: [], wc: [], food: [], fastfood: [], apiOk: false };
+  }
+}
+
+// ── Time zone estimate from longitude (US/Canada) ──────────
+function tzFor(lon) {
+  if (lon > -67)  return 'America/Halifax';
+  if (lon > -87)  return 'America/New_York';
+  if (lon > -104) return 'America/Chicago';
+  if (lon > -115) return 'America/Denver';
+  if (lon > -141) return 'America/Los_Angeles';
+  return 'America/Anchorage';
+}
+
+function fmtTime(ms, tz) {
+  return new Date(ms).toLocaleTimeString('en-US', {
+    timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true
+  });
+}
+
+function tzAbbr(ms, tz) {
+  return new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' })
+    .formatToParts(new Date(ms)).find(p => p.type === 'timeZoneName')?.value ?? '';
+}
+
+function tzCity(tz) {
+  return tz.replace('America/', '').replace(/_/g, ' ');
+}
+
+// ── Stop schedule ──────────────────────────────────────────
+function buildStops(depMs, nightMs, intHrs, meals, routeSecs) {
+  const intMs   = intHrs * 3600000;
+  const ceiling = Math.min(nightMs, depMs + routeSecs * 1000);
+  const stops   = [];
+
+  for (let n = 1; ; n++) {
+    const t = depMs + n * intMs;
+    if (t > ceiling) break;
+    stops.push({ time: t, meal: false, label: null });
+  }
+
+  for (const m of meals) {
+    if (!m.time) continue;
+    const mt = toMs(m.time);
+    if (mt <= depMs || mt > ceiling) continue;
+    const hit = stops.find(s => Math.abs(s.time - mt) <= 30 * 60000);
+    if (hit) { hit.meal = true; hit.label = m.label; hit.time = mt; }
+    else       stops.push({ time: mt, meal: true, label: m.label });
+  }
+
+  stops.sort((a,b) => a.time - b.time);
+  return stops;
+}
+
+// ── Utilities ──────────────────────────────────────────────
+function toMs(hhmm) {
+  const [h,m] = hhmm.split(':').map(Number);
+  const d = new Date(); d.setHours(h, m, 0, 0);
+  return d.getTime();
+}
+
+function pause(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function distStr(m) {
+  return m < 250 ? `${Math.round(m)} m` : `${(m/1609.34).toFixed(1)} mi`;
+}
+
+function hhmm(secs) {
+  const h = Math.floor(secs/3600), m = Math.round((secs%3600)/60);
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+function mapsSearch(q, lat, lon) {
+  return `https://www.google.com/maps/search/${encodeURIComponent(q)}/@${lat.toFixed(5)},${lon.toFixed(5)},13z`;
+}
+
+function mapsDir(lat, lon) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}`;
+}
+
+// ── Form: add meal stop ────────────────────────────────────
+function addMeal() {
+  if (_mealCount >= 3) return;
+  _mealCount++;
+  const row = document.createElement('div');
+  row.className = 'meal-row';
+  row.innerHTML = `
+    <select class="ml">
+      <option>Lunch</option><option>Dinner</option>
+      <option>Snack</option><option>Breakfast</option>
+    </select>
+    <input type="time" class="mt">
+    <button class="btn-x" onclick="removeMeal(this)">✕</button>`;
+  document.getElementById('meal-container').appendChild(row);
+  if (_mealCount >= 3) document.getElementById('meal-btn').disabled = true;
+}
+
+function removeMeal(btn) {
+  btn.parentElement.remove();
+  _mealCount--;
+  document.getElementById('meal-btn').disabled = false;
+}
+
+function getMeals() {
+  return [...document.querySelectorAll('.meal-row')].map(r => ({
+    label: r.querySelector('.ml').value,
+    time:  r.querySelector('.mt').value
+  })).filter(m => m.time);
+}
+
+// ── Geolocation ────────────────────────────────────────────
+function useMyLocation() {
+  if (!navigator.geolocation) {
+    alert('Geolocation is not available in this browser. Please type your starting location.');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(async pos => {
+    _gpsCoord = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+    const name = await revGeo(_gpsCoord.lat, _gpsCoord.lon);
+    document.getElementById('start').value = name;
+  }, () => {
+    alert('Could not get your location. Please type it in.');
+  });
+}
+
+function backToForm() {
+  document.getElementById('form-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── UI helpers ─────────────────────────────────────────────
+function showStatus(msg, err = false) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = err ? 'err' : '';
+  el.hidden = false;
+}
+
+function clearStatus() { document.getElementById('status').hidden = true; }
+
+// ── Main ───────────────────────────────────────────────────
+async function planTrip() {
+  const startVal = document.getElementById('start').value.trim();
+  const endVal   = document.getElementById('end').value.trim();
+  const depStr   = document.getElementById('dep').value;
+  const nightStr = document.getElementById('night').value;
+  const intHrs   = parseFloat(document.getElementById('interval').value);
+
+  if (!startVal || !endVal) { showStatus('Please enter start and end locations.', true); return; }
+  if (!depStr || !nightStr) { showStatus('Please set departure and stop-for-night times.', true); return; }
+
+  const depMs   = toMs(depStr);
+  const nightMs = toMs(nightStr);
+  if (nightMs <= depMs) { showStatus('Stop-for-night time must be after departure.', true); return; }
+
+  const btn = document.getElementById('plan-btn');
+  btn.disabled = true;
+  document.getElementById('results').hidden = true;
+  document.getElementById('foot').hidden = true;
+
+  try {
+    showStatus('Finding your route…');
+
+    const [startCoord, endCoord] = await Promise.all([
+      _gpsCoord ? Promise.resolve(_gpsCoord) : geocode(startVal),
+      geocode(endVal)
+    ]);
+
+    if (!startCoord) { showStatus('Could not find starting location. Try "City, State" format.', true); return; }
+    if (!endCoord)   { showStatus('Could not find destination. Try "City, State" format.', true); return; }
+
+    showStatus('Calculating route…');
+    const route = await getRoute(startCoord, endCoord);
+    if (!route) { showStatus('Could not calculate route. Make sure both locations are drivable.', true); return; }
+
+    const { coords, duration, distance } = route;
+    const meals = getMeals();
+    const stops = buildStops(depMs, nightMs, intHrs, meals, duration);
+
+    if (!stops.length) {
+      showStatus(`No stops fit your window. The drive is ${hhmm(duration)} total — try a shorter interval or later stop-for-night time.`, true);
+      return;
+    }
+
+    const detour = parseInt(document.getElementById('detour').value) || 10;
+    const brands = document.getElementById('brands').value.split('\n').map(b=>b.trim()).filter(Boolean);
+
+    const stopData = [];
+    for (let i = 0; i < stops.length; i++) {
+      showStatus(`Checking stop ${i+1} of ${stops.length}…`);
+      const s      = stops[i];
+      const pos    = routePos(coords, duration, (s.time - depMs) / 1000);
+      const tz     = tzFor(pos.lon);
+      const isLast = i === stops.length - 1;
+
+      const [locName, places] = await Promise.all([
+        revGeo(pos.lat, pos.lon),
+        getPlaces(pos.lat, pos.lon)
+      ]);
+
+      stopData.push({
+        ...s, ...pos, tz, locName, places, isLast,
+        detour: isLast ? detour : null,
+        brands: isLast ? brands : null
+      });
+
+      if (i < stops.length - 1) await pause(350);
+    }
+
+    renderResults(stopData, duration, distance);
+
+  } catch (err) {
+    showStatus('Something went wrong — check your connection and try again.', true);
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Render results ─────────────────────────────────────────
+function renderResults(stopData, duration, distance) {
+  const mi = Math.round(distance / 1609.34);
+
+  document.getElementById('summary').innerHTML = `
+    <div class="summary-bar">
+      <span>${hhmm(duration)}<small>total drive</small></span>
+      <span>${mi} mi<small>total distance</small></span>
+      <span>${stopData.length}<small>stop${stopData.length !== 1 ? 's' : ''}</small></span>
+    </div>`;
+
+  let prevTZ = null;
+  document.getElementById('cards').innerHTML = stopData.map((s, i) => {
+    const tzChanged = prevTZ && prevTZ !== s.tz;
+    const tzNote = tzChanged
+      ? `<div class="tz-banner">Entering ${tzCity(s.tz)} time zone (${tzAbbr(s.time, s.tz)})</div>`
+      : '';
+    prevTZ = s.tz;
+
+    const timeStr  = fmtTime(s.time, s.tz);
+    const badgeLbl = s.isLast ? 'Stop for night' : s.meal ? (s.label || 'Meal stop') : `Stop ${i+1}`;
+    const badgeCls = s.isLast ? 'b-night' : s.meal ? 'b-meal' : 'b-stop';
+
+    return `
+      ${tzNote}
+      <div class="stop-card${s.isLast ? ' night' : ''}">
+        <div class="stop-head">
+          <div class="stop-time">${timeStr}</div>
+          <div class="stop-info">
+            <span class="badge ${badgeCls}">${badgeLbl}</span>
+            <div class="stop-loc">${s.locName}</div>
+          </div>
+        </div>
+        ${pgSection(s)}
+        ${wcSection(s)}
+        ${foodSection(s)}
+        ${s.isLast ? hotelSection(s) : ''}
+      </div>`;
+  }).join('');
+
+  clearStatus();
+  document.getElementById('results').hidden = false;
+  document.getElementById('foot').hidden = false;
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+}
+
+function pgSection(s) {
+  const lbl = '<div class="place-lbl lbl-pg">Playgrounds</div>';
+  if (!s.places.apiOk) {
+    return `<div class="place">${lbl}
+      <div class="api-err">Couldn't load nearby data</div>
+      <a class="ml" href="${mapsSearch('playground park', s.lat, s.lon)}" target="_blank">Search in Maps instead</a>
+    </div>`;
+  }
+  if (!s.places.pg.length) {
+    return `<div class="place">${lbl}<div class="none">None found within 5 km &mdash;
+      <a class="ml" href="${mapsSearch('playground park', s.lat, s.lon)}" target="_blank">Search in Maps</a></div></div>`;
+  }
+  return `<div class="place">${lbl}${s.places.pg.map(p => `
+    <div class="place-item">
+      <div class="place-name">${p.name || 'Playground'}</div>
+      <div class="place-dist">${distStr(p.d)}</div>
+      <a class="btn btn-sm btn-green" href="${mapsDir(p.lat, p.lon)}" target="_blank">Go</a>
+    </div>`).join('')}</div>`;
+}
+
+function wcSection(s) {
+  const lbl     = '<div class="place-lbl lbl-wc">Restrooms</div>';
+  const cleanTip = `<div class="none" style="margin-top:8px;font-size:13px;">
+    Also reliable: <a class="ml" href="${mapsSearch("McDonald's OR Chick-fil-A OR Starbucks", s.lat, s.lon)}" target="_blank">McDonald's, Chick-fil-A, Starbucks</a>
+  </div>`;
+
+  if (!s.places.apiOk) {
+    return `<div class="place">${lbl}
+      <a class="ml" href="${mapsSearch('public restroom', s.lat, s.lon)}" target="_blank">Search in Maps</a>
+      ${cleanTip}
+    </div>`;
+  }
+  if (!s.places.wc.length) {
+    return `<div class="place">${lbl}
+      <div class="none">None found nearby &mdash; <a class="ml" href="${mapsSearch('public restroom gas station', s.lat, s.lon)}" target="_blank">Search in Maps</a></div>
+      ${cleanTip}
+    </div>`;
+  }
+  return `<div class="place">${lbl}${s.places.wc.map(r => `
+    <div class="place-item">
+      <div class="place-name">${r.name || 'Public restroom'}</div>
+      <div class="place-dist">${distStr(r.d)}</div>
+      <a class="btn btn-sm btn-blue" href="${mapsDir(r.lat, r.lon)}" target="_blank">Go</a>
+    </div>`).join('')}
+    ${cleanTip}
+  </div>`;
+}
+
+function fmtCuisine(c) {
+  return c.split(';')[0].replace(/_/g, ' ').trim();
+}
+
+function foodSection(s) {
+  const lbl      = '<div class="place-lbl lbl-food">Food</div>';
+  const fallback = `<a class="btn btn-full btn-orange" style="margin-top:8px"
+    href="${mapsSearch('family friendly restaurant kids menu', s.lat, s.lon)}"
+    target="_blank">Find more restaurants in Maps</a>`;
+
+  if (!s.places.apiOk) {
+    return `<div class="place">${lbl}
+      <div class="api-err">Couldn't load nearby data</div>
+      ${fallback}
+    </div>`;
+  }
+  if (!s.places.food.length) {
+    // Fall back to fast food when no sit-down options found
+    const ff = s.places.fastfood || [];
+    if (ff.length) {
+      return `<div class="place">${lbl}
+        <div class="none" style="margin-bottom:8px;">No sit-down options nearby — fast food in the area:</div>
+        ${ff.map(r => {
+          const cuisine = r.cuisine ? `<span class="place-cuisine">(${fmtCuisine(r.cuisine)})</span>` : '';
+          return `<div class="place-item">
+            <div class="place-name">${r.name}${cuisine}</div>
+            <div class="place-dist">${distStr(r.d)}</div>
+            <a class="btn btn-sm btn-orange" href="${mapsDir(r.lat, r.lon)}" target="_blank">Go</a>
+          </div>`;
+        }).join('')}
+        ${fallback}
+      </div>`;
+    }
+    return `<div class="place">${lbl}
+      <div class="none">No restaurants found nearby &mdash;
+        <a class="ml" href="${mapsSearch('restaurant', s.lat, s.lon)}" target="_blank">Search in Maps</a>
+      </div>
+    </div>`;
+  }
+  return `<div class="place">${lbl}
+    ${s.places.food.map(r => {
+      const cuisine = r.cuisine ? `<span class="place-cuisine">(${fmtCuisine(r.cuisine)})</span>` : '';
+      return `<div class="place-item">
+        <div class="place-name">${r.name}${cuisine}</div>
+        <div class="place-dist">${distStr(r.d)}</div>
+        <a class="btn btn-sm btn-orange" href="${mapsDir(r.lat, r.lon)}" target="_blank">Go</a>
+      </div>`;
+    }).join('')}
+    ${fallback}
+  </div>`;
+}
+
+function hotelSection(s) {
+  return `<div class="place hotels">
+    <div class="place-lbl lbl-htl">Hotels (within ~${s.detour} min of route)</div>
+    ${s.brands.map(b =>
+      `<a class="btn btn-full btn-purple" href="${mapsSearch(b + ' hotel', s.lat, s.lon)}" target="_blank">${b}</a>`
+    ).join('')}
+    <a class="btn btn-full btn-purple-o"
+       href="${mapsSearch('family friendly hotel', s.lat, s.lon)}"
+       target="_blank">All family hotels</a>
+  </div>`;
+}
+</script>
+</body>
+</html>
