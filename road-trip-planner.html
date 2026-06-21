@@ -356,6 +356,10 @@
 
     .btn-amber { background: var(--amber); color: white; }
 
+    /* ─── Button row (e.g. chain restroom options) ─────────── */
+    .btn-row { display: flex; gap: 8px; margin-top: 6px; }
+    .btn-row .btn { flex: 1; text-align: center; }
+
     /* ─── Nap window warning ───────────────────────────────── */
     .nap-banner {
       background: #fff9c4;
@@ -512,8 +516,8 @@ Homewood Suites</textarea>
   </section>
 
   <p class="foot-note" id="foot" hidden>
-    Playground, restroom &amp; restaurant data from OpenStreetMap — coverage varies in rural areas.<br>
-    Fast food chains are filtered out. Hotel links open Google Maps. Times are estimated local time zone.
+    All search links open Google Maps near your estimated stop location.<br>
+    Route times are estimates. Hotel links search within your detour preference.
   </p>
 
 </main>
@@ -525,7 +529,6 @@ Homewood Suites</textarea>
 const NOM   = 'https://nominatim.openstreetmap.org/search';
 const OSRM  = 'https://router.project-osrm.org/route/v1/driving';
 const BDC   = 'https://api.bigdatacloud.net/data/reverse-geocode-client';
-const OVP   = 'https://overpass-api.de/api/interpreter';
 
 // ── State ──────────────────────────────────────────────────
 let _gpsCoord   = null;   // set by "use my location"
@@ -605,103 +608,12 @@ async function revGeo(lat, lon) {
   } catch { return 'Unknown location'; }
 }
 
-// ── Fast food blocklist (OSM amenity=restaurant may include these) ─
-// Chick-fil-A intentionally excluded — reliable clean restrooms + acceptable food option
-const FAST_FOOD = new Set([
-  "mcdonald's","mcdonalds","burger king","wendy's","wendys","taco bell",
-  "kfc","subway","pizza hut","popeyes",
-  "domino's","dominos","sonic","hardee's","hardees","carl's jr","carls jr",
-  "jack in the box","arby's","arbys","little caesars","dairy queen","whataburger",
-  "in-n-out burger","in-n-out","wingstop","raising cane's","el pollo loco",
-  "del taco","church's chicken","long john silver's","captain d's","checkers",
-  "rally's","steak 'n shake","steak n shake","culver's","culvers","shake shack",
-  "five guys","bojangles","zaxby's","freddy's","smashburger","habit burger"
-]);
-
-// ── Places (Overpass API) ──────────────────────────────────
-// Tries two public Overpass mirrors in sequence; returns on first success.
-const OVP_MIRRORS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter'
-];
-
-async function getPlaces(lat, lon) {
-  const PG_R   = 5000;
-  const WC_R   = 3000;
-  const FOOD_R = 5000;
-  const GAS_R  = 5000;
-  const q = `[out:json][timeout:25];(`
-    + `node["amenity"="playground"](around:${PG_R},${lat},${lon});`
-    + `way["amenity"="playground"](around:${PG_R},${lat},${lon});`
-    + `node["amenity"="toilets"](around:${WC_R},${lat},${lon});`
-    + `way["amenity"="toilets"](around:${WC_R},${lat},${lon});`
-    + `node["amenity"="restaurant"]["name"](around:${FOOD_R},${lat},${lon});`
-    + `way["amenity"="restaurant"]["name"](around:${FOOD_R},${lat},${lon});`
-    + `node["amenity"="cafe"]["name"](around:${FOOD_R},${lat},${lon});`
-    + `node["amenity"="fast_food"]["name"](around:${FOOD_R},${lat},${lon});`
-    + `node["amenity"="fuel"](around:${GAS_R},${lat},${lon});`
-    + `way["amenity"="fuel"](around:${GAS_R},${lat},${lon});`
-    + `);out center tags;`;
-
-  let lastErr = 'Unknown error';
-
-  for (const mirror of OVP_MIRRORS) {
-    try {
-      const r = await apiFetch(`${mirror}?data=${encodeURIComponent(q)}`, 8000);
-      if (!r.ok) {
-        lastErr = `HTTP ${r.status} from ${mirror}`;
-        console.warn(lastErr);
-        continue;
-      }
-      const data = await r.json();
-      if (!Array.isArray(data.elements)) {
-        lastErr = 'Unexpected response format';
-        console.warn(lastErr, data);
-        continue;
-      }
-
-      const pg = [], wc = [], food = [], fastfood = [], gas = [];
-      for (const el of data.elements) {
-        const elat = el.lat ?? el.center?.lat, elon = el.lon ?? el.center?.lon;
-        if (!elat) continue;
-        const d       = hav(lat, lon, elat, elon);
-        const name    = el.tags?.name ?? null;
-        const amenity = el.tags?.amenity;
-
-        if (amenity === 'playground') {
-          pg.push({ lat: elat, lon: elon, name, d });
-        } else if (amenity === 'toilets') {
-          wc.push({ lat: elat, lon: elon, name, d });
-        } else if (amenity === 'restaurant' || amenity === 'cafe') {
-          const nm      = (name || '').toLowerCase().trim();
-          const cuisine = (el.tags?.cuisine || '').toLowerCase();
-          if (!FAST_FOOD.has(nm) && !cuisine.includes('fast_food')) {
-            food.push({ lat: elat, lon: elon, name: name || 'Restaurant', cuisine: el.tags?.cuisine || null, d });
-          } else {
-            fastfood.push({ lat: elat, lon: elon, name: name || 'Restaurant', cuisine: el.tags?.cuisine || null, d });
-          }
-        } else if (amenity === 'fast_food') {
-          fastfood.push({ lat: elat, lon: elon, name: name || 'Fast food', cuisine: el.tags?.cuisine || null, d });
-        } else if (amenity === 'fuel') {
-          gas.push({ lat: elat, lon: elon, name: name || 'Gas station', d });
-        }
-      }
-
-      pg.sort((a,b) => a.d - b.d);
-      wc.sort((a,b) => a.d - b.d);
-      food.sort((a,b) => a.d - b.d);
-      fastfood.sort((a,b) => a.d - b.d);
-      gas.sort((a,b) => a.d - b.d);
-      return { pg: pg.slice(0,3), wc: wc.slice(0,2), food: food.slice(0,4), fastfood: fastfood.slice(0,4), gas: gas.slice(0,3), apiOk: true };
-
-    } catch (e) {
-      lastErr = e.message;
-      console.warn(`Overpass error (${mirror}):`, e.message);
-    }
-  }
-
-  console.error('All Overpass mirrors failed. Last error:', lastErr);
-  return { pg: [], wc: [], food: [], fastfood: [], gas: [], apiOk: false, apiErr: lastErr };
+// ── Maps search helper (town-name anchored) ────────────────
+function mapsNear(query, locName) {
+  const q = locName && locName !== 'Unknown location'
+    ? `${query} near ${locName}`
+    : query;
+  return `https://www.google.com/maps/search/${encodeURIComponent(q)}`;
 }
 
 // ── Time zone estimate from longitude (US/Canada) ──────────
@@ -763,9 +675,6 @@ function toMs(hhmm) {
 
 function pause(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-function distStr(m) {
-  return m < 250 ? `${Math.round(m)} m` : `${(m/1609.34).toFixed(1)} mi`;
-}
 
 function hhmm(secs) {
   const h = Math.floor(secs/3600), m = Math.round((secs%3600)/60);
@@ -897,9 +806,9 @@ async function planTrip() {
     const brands   = document.getElementById('brands').value.split('\n').map(b=>b.trim()).filter(Boolean);
     const napWindow = getNapWindow();
 
+    showStatus('Locating stops along your route…');
     const stopData = [];
     for (let i = 0; i < stops.length; i++) {
-      showStatus(`Checking stop ${i+1} of ${stops.length}…`);
       const s      = stops[i];
       const pos    = routePos(coords, duration, (s.time - depMs) / 1000);
       const tz     = tzFor(pos.lon);
@@ -908,18 +817,15 @@ async function planTrip() {
         ? s.time >= napWindow.start && s.time <= napWindow.end
         : false;
 
-      const [locName, places] = await Promise.all([
-        revGeo(pos.lat, pos.lon),
-        getPlaces(pos.lat, pos.lon)
-      ]);
+      const locName = await revGeo(pos.lat, pos.lon);
 
       stopData.push({
-        ...s, ...pos, tz, locName, places, isLast, napInWindow,
+        ...s, ...pos, tz, locName, isLast, napInWindow,
         detour: isLast ? detour : null,
         brands: isLast ? brands : null
       });
 
-      if (i < stops.length - 1) await pause(350);
+      if (i < stops.length - 1) await pause(150);
     }
 
     const startName = document.getElementById('start').value.trim();
@@ -984,94 +890,36 @@ function renderResults(stopData, duration, distance, startName, endName) {
 }
 
 function pgSection(s) {
-  const lbl = '<div class="place-lbl lbl-pg">Playgrounds</div>';
-  if (!s.places.apiOk) {
-    return `<div class="place">${lbl}
-      <a class="btn btn-full btn-green" href="${mapsSearch('playground park toddler', s.lat, s.lon)}" target="_blank">Search playgrounds in Maps</a>
-    </div>`;
-  }
-  if (!s.places.pg.length) {
-    return `<div class="place">${lbl}<div class="none">None found within 5 km &mdash;
-      <a class="ml" href="${mapsSearch('playground park', s.lat, s.lon)}" target="_blank">Search in Maps</a></div></div>`;
-  }
-  return `<div class="place">${lbl}${s.places.pg.map(p => `
-    <div class="place-item">
-      <div class="place-name">${p.name || 'Playground'}</div>
-      <div class="place-dist">${distStr(p.d)}</div>
-      <a class="btn btn-sm btn-green" href="${mapsDir(p.lat, p.lon)}" target="_blank">Go</a>
-    </div>`).join('')}</div>`;
-}
-
-function wcSection(s) {
-  const lbl        = '<div class="place-lbl lbl-wc">Restrooms</div>';
-  const wcQuery    = "public restroom OR Starbucks OR Chick-fil-A OR McDonald's";
-  const mapsBtn    = `<a class="btn btn-full btn-blue" href="${mapsSearch(wcQuery, s.lat, s.lon)}" target="_blank">Find restrooms nearby</a>`;
-
-  if (!s.places.apiOk) {
-    return `<div class="place">${lbl}${mapsBtn}</div>`;
-  }
-  if (!s.places.wc.length) {
-    return `<div class="place">${lbl}
-      <div class="none" style="margin-bottom:8px;">None found in map data &mdash;</div>
-      ${mapsBtn}
-    </div>`;
-  }
-  return `<div class="place">${lbl}${s.places.wc.map(r => `
-    <div class="place-item">
-      <div class="place-name">${r.name || 'Public restroom'}</div>
-      <div class="place-dist">${distStr(r.d)}</div>
-      <a class="btn btn-sm btn-blue" href="${mapsDir(r.lat, r.lon)}" target="_blank">Go</a>
-    </div>`).join('')}
-    <div style="margin-top:8px;">${mapsBtn}</div>
+  return `<div class="place">
+    <div class="place-lbl lbl-pg">Playgrounds & Parks</div>
+    <a class="btn btn-full btn-green" href="${mapsNear('toddler playground', s.locName)}" target="_blank">Playgrounds near ${s.locName}</a>
   </div>`;
 }
 
-function fmtCuisine(c) {
-  return c.split(';')[0].replace(/_/g, ' ').trim();
+function wcSection(s) {
+  return `<div class="place">
+    <div class="place-lbl lbl-wc">Restrooms</div>
+    <a class="btn btn-full btn-blue" href="${mapsNear('public restroom', s.locName)}" target="_blank">Public restrooms near ${s.locName}</a>
+    <div class="none" style="font-size:12px;margin:5px 0 4px;">Reliable clean options:</div>
+    <div class="btn-row">
+      <a class="btn btn-sm btn-blue" href="${mapsNear('Starbucks', s.locName)}" target="_blank">Starbucks</a>
+      <a class="btn btn-sm btn-blue" href="${mapsNear('Chick-fil-A', s.locName)}" target="_blank">Chick-fil-A</a>
+      <a class="btn btn-sm btn-blue" href="${mapsNear("McDonald's", s.locName)}" target="_blank">McDonald's</a>
+    </div>
+  </div>`;
 }
 
 function foodSection(s) {
-  const lbl      = '<div class="place-lbl lbl-food">Food</div>';
-  const fallback = `<a class="btn btn-full btn-orange" style="margin-top:8px"
-    href="${mapsSearch('family friendly restaurant kids menu', s.lat, s.lon)}"
-    target="_blank">Find more restaurants in Maps</a>`;
-
-  if (!s.places.apiOk) {
-    return `<div class="place">${lbl}${fallback}</div>`;
-  }
-  if (!s.places.food.length) {
-    // Fall back to fast food when no sit-down options found
-    const ff = s.places.fastfood || [];
-    if (ff.length) {
-      return `<div class="place">${lbl}
-        <div class="none" style="margin-bottom:8px;">No sit-down options nearby — fast food in the area:</div>
-        ${ff.map(r => {
-          const cuisine = r.cuisine ? `<span class="place-cuisine">(${fmtCuisine(r.cuisine)})</span>` : '';
-          return `<div class="place-item">
-            <div class="place-name">${r.name}${cuisine}</div>
-            <div class="place-dist">${distStr(r.d)}</div>
-            <a class="btn btn-sm btn-orange" href="${mapsDir(r.lat, r.lon)}" target="_blank">Go</a>
-          </div>`;
-        }).join('')}
-        ${fallback}
-      </div>`;
-    }
-    return `<div class="place">${lbl}
-      <div class="none">No restaurants found nearby &mdash;
-        <a class="ml" href="${mapsSearch('restaurant', s.lat, s.lon)}" target="_blank">Search in Maps</a>
-      </div>
-    </div>`;
-  }
-  return `<div class="place">${lbl}
-    ${s.places.food.map(r => {
-      const cuisine = r.cuisine ? `<span class="place-cuisine">(${fmtCuisine(r.cuisine)})</span>` : '';
-      return `<div class="place-item">
-        <div class="place-name">${r.name}${cuisine}</div>
-        <div class="place-dist">${distStr(r.d)}</div>
-        <a class="btn btn-sm btn-orange" href="${mapsDir(r.lat, r.lon)}" target="_blank">Go</a>
-      </div>`;
-    }).join('')}
-    ${fallback}
+  const mealLabel = s.meal ? (s.label || 'Meal') : null;
+  const foodQuery = mealLabel === 'Breakfast' ? 'breakfast restaurant'
+    : mealLabel === 'Lunch'   ? 'lunch family restaurant'
+    : mealLabel === 'Dinner'  ? 'family dinner restaurant'
+    : 'family restaurant kids menu';
+  const foodLbl = mealLabel ? `Food — ${mealLabel}` : 'Food';
+  return `<div class="place">
+    <div class="place-lbl lbl-food">${foodLbl}</div>
+    <a class="btn btn-full btn-orange" href="${mapsNear(foodQuery, s.locName)}" target="_blank">${mealLabel || 'Family'} restaurants near ${s.locName}</a>
+    <a class="btn btn-full btn-orange" style="opacity:.8;margin-top:6px" href="${mapsNear('coffee cafe', s.locName)}" target="_blank">Coffee near ${s.locName}</a>
   </div>`;
 }
 
@@ -1088,24 +936,9 @@ function hotelSection(s) {
 }
 
 function gasSection(s) {
-  const lbl     = '<div class="place-lbl lbl-gas">Gas</div>';
-  const mapsBtn = `<a class="btn btn-full btn-amber" href="${mapsSearch('gas station', s.lat, s.lon)}" target="_blank">Find gas stations nearby</a>`;
-  if (!s.places.apiOk) {
-    return `<div class="place">${lbl}${mapsBtn}</div>`;
-  }
-  if (!s.places.gas.length) {
-    return `<div class="place">${lbl}
-      <div class="none" style="margin-bottom:8px;">None found in map data &mdash;</div>
-      ${mapsBtn}
-    </div>`;
-  }
-  return `<div class="place">${lbl}${s.places.gas.map(g => `
-    <div class="place-item">
-      <div class="place-name">${g.name}</div>
-      <div class="place-dist">${distStr(g.d)}</div>
-      <a class="btn btn-sm btn-amber" href="${mapsDir(g.lat, g.lon)}" target="_blank">Go</a>
-    </div>`).join('')}
-    <div style="margin-top:8px;">${mapsBtn}</div>
+  return `<div class="place">
+    <div class="place-lbl lbl-gas">Gas</div>
+    <a class="btn btn-full btn-amber" href="${mapsNear('gas station', s.locName)}" target="_blank">Gas stations near ${s.locName}</a>
   </div>`;
 }
 
@@ -1120,15 +953,11 @@ function copyItinerary() {
     ''
   ];
   stopData.forEach((s, i) => {
-    const timeStr  = fmtTime(s.time, s.tz);
-    const label    = s.isLast ? 'Stop for night' : s.meal ? (s.label || 'Meal stop') : `Stop ${i + 1}`;
+    const timeStr = fmtTime(s.time, s.tz);
+    const label   = s.isLast ? 'Stop for night' : s.meal ? (s.label || 'Meal stop') : `Stop ${i + 1}`;
     lines.push(`── ${label} · ${timeStr} ──`);
     lines.push(s.locName);
     if (s.napInWindow) lines.push('⚠ Nap window — consider driving through');
-    if (s.places.pg.length)  lines.push('Playground: ' + s.places.pg[0].name);
-    if (s.places.wc.length)  lines.push('Restroom: '   + s.places.wc[0].name);
-    if (s.places.gas.length) lines.push('Gas: '        + s.places.gas[0].name + ' (' + distStr(s.places.gas[0].d) + ')');
-    if (s.places.food.length) lines.push('Food: '      + s.places.food.slice(0,2).map(f => f.name).join(', '));
     lines.push('');
   });
 
