@@ -913,21 +913,17 @@ function pgSection(s) {
 }
 
 function wcSection(s) {
-  const lbl      = '<div class="place-lbl lbl-wc">Restrooms</div>';
-  const cleanTip = `<div class="none" style="margin-top:8px;font-size:13px;">
-    Also reliable: <a class="ml" href="${mapsSearch("McDonald's OR Chick-fil-A OR Starbucks", s.lat, s.lon)}" target="_blank">McDonald's, Chick-fil-A, Starbucks</a>
-  </div>`;
+  const lbl        = '<div class="place-lbl lbl-wc">Restrooms</div>';
+  const wcQuery    = "public restroom OR Starbucks OR Chick-fil-A OR McDonald's";
+  const mapsBtn    = `<a class="btn btn-full btn-blue" href="${mapsSearch(wcQuery, s.lat, s.lon)}" target="_blank">Find restrooms nearby</a>`;
 
   if (!s.places.apiOk) {
-    return `<div class="place">${lbl}
-      <a class="btn btn-full btn-blue" href="${mapsSearch('public restroom', s.lat, s.lon)}" target="_blank">Search restrooms in Maps</a>
-      ${cleanTip}
-    </div>`;
+    return `<div class="place">${lbl}${mapsBtn}</div>`;
   }
   if (!s.places.wc.length) {
     return `<div class="place">${lbl}
-      <div class="none">None found nearby &mdash; <a class="ml" href="${mapsSearch('public restroom gas station', s.lat, s.lon)}" target="_blank">Search in Maps</a></div>
-      ${cleanTip}
+      <div class="none" style="margin-bottom:8px;">None found in map data &mdash;</div>
+      ${mapsBtn}
     </div>`;
   }
   return `<div class="place">${lbl}${s.places.wc.map(r => `
@@ -936,7 +932,7 @@ function wcSection(s) {
       <div class="place-dist">${distStr(r.d)}</div>
       <a class="btn btn-sm btn-blue" href="${mapsDir(r.lat, r.lon)}" target="_blank">Go</a>
     </div>`).join('')}
-    ${cleanTip}
+    <div style="margin-top:8px;">${mapsBtn}</div>
   </div>`;
 }
 
