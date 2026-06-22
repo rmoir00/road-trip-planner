@@ -987,9 +987,9 @@ function wcSection(s) {
     <a class="btn btn-full btn-blue" href="${mapsSearch('public restroom', s.lat, s.lon)}" target="_blank">Public restrooms near ${s.locName}</a>
     <div class="none" style="font-size:12px;margin:5px 0 4px;">Reliable clean options:</div>
     <div class="btn-row">
-      <a class="btn btn-sm btn-blue" href="${mapsSearch('Starbucks', s.lat, s.lon)}" target="_blank">Starbucks</a>
-      <a class="btn btn-sm btn-blue" href="${mapsSearch('Chick-fil-A', s.lat, s.lon)}" target="_blank">Chick-fil-A</a>
-      <a class="btn btn-sm btn-blue" href="${mapsSearch("McDonald's", s.lat, s.lon)}" target="_blank">McDonald's</a>
+      <a class="btn btn-sm btn-blue" href="${mapsSearch(`Starbucks near ${s.locName}`, s.lat, s.lon)}" target="_blank">Starbucks</a>
+      <a class="btn btn-sm btn-blue" href="${mapsSearch(`Chick-fil-A near ${s.locName}`, s.lat, s.lon)}" target="_blank">Chick-fil-A</a>
+      <a class="btn btn-sm btn-blue" href="${mapsSearch(`McDonald's near ${s.locName}`, s.lat, s.lon)}" target="_blank">McDonald's</a>
     </div>
   </div>`;
 }
