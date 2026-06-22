@@ -311,6 +311,12 @@
     .b-meal   { background: var(--orange-light); color: var(--orange); }
     .b-night  { background: var(--purple-light); color: var(--purple); }
 
+    .stop-remain {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
     /* ─── Place sections ───────────────────────────────── */
     .place {
       padding: 13px 16px;
@@ -437,15 +443,26 @@
         </div>
       </div>
 
-      <div class="field">
-        <label>Stop every</label>
-        <select id="interval">
-          <option value="1">1 hour</option>
-          <option value="1.5">1.5 hours</option>
-          <option value="2" selected>2 hours</option>
-          <option value="2.5">2.5 hours</option>
-          <option value="3">3 hours</option>
-        </select>
+      <div class="row">
+        <div class="field">
+          <label>Stop every</label>
+          <select id="interval">
+            <option value="1">1 hour</option>
+            <option value="1.5">1.5 hours</option>
+            <option value="2" selected>2 hours</option>
+            <option value="2.5">2.5 hours</option>
+            <option value="3">3 hours</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Stop lasts</label>
+          <select id="stop-dur">
+            <option value="15">15 min</option>
+            <option value="20" selected>20 min</option>
+            <option value="30">30 min</option>
+            <option value="45">45 min</option>
+          </select>
+        </div>
       </div>
 
       <hr>
@@ -507,7 +524,7 @@ Homewood Suites</textarea>
 
   <!-- ── Results ── -->
   <section id="results" hidden>
-    <button class="btn-replan" onclick="backToForm()">↑ Re-plan this trip</button>
+    <button class="btn-replan" onclick="replanFromHere()">↑ Re-plan from here</button>
     <div class="action-row">
       <button class="btn btn-outline-navy" onclick="copyItinerary()">Copy itinerary</button>
       <button class="btn btn-outline-navy" onclick="window.print()">Print</button>
@@ -640,27 +657,36 @@ function tzCity(tz) {
 }
 
 // ── Stop schedule ──────────────────────────────────────────
-function buildStops(depMs, nightMs, intHrs, meals, routeSecs) {
+function buildStops(depMs, nightMs, intHrs, stopDurMs, meals, routeSecs) {
   const intMs   = intHrs * 3600000;
-  const ceiling = Math.min(nightMs, depMs + routeSecs * 1000);
+  const routeMs = routeSecs * 1000;
   const stops   = [];
 
+  // Regular interval stops.
+  // driveMs = total driving time elapsed to reach this stop.
+  // clockTime = driveMs + accumulated stop durations at all prior stops.
   for (let n = 1; ; n++) {
-    const t = depMs + n * intMs;
-    if (t > ceiling) break;
-    stops.push({ time: t, meal: false, label: null });
+    const driveMs   = n * intMs;
+    if (driveMs > routeMs) break;
+    const clockTime = depMs + driveMs + (n - 1) * stopDurMs;
+    if (clockTime > nightMs) break;
+    stops.push({ time: clockTime, driveMs, meal: false, label: null });
   }
 
+  // Meal stops (anchored to clock time).
   for (const m of meals) {
     if (!m.time) continue;
     const mt = toMs(m.time);
-    if (mt <= depMs || mt > ceiling) continue;
-    const hit = stops.find(s => Math.abs(s.time - mt) <= 30 * 60000);
-    if (hit) { hit.meal = true; hit.label = m.label; hit.time = mt; }
-    else       stops.push({ time: mt, meal: true, label: m.label });
+    if (mt <= depMs || mt > nightMs) continue;
+    // Derive drive elapsed: subtract stop durations for each regular stop before this meal.
+    const priorStops = stops.filter(s => s.time < mt).length;
+    const driveMs    = Math.min(Math.max(mt - depMs - priorStops * stopDurMs, 0), routeMs);
+    const hit        = stops.find(s => Math.abs(s.time - mt) <= 30 * 60000);
+    if (hit) { hit.meal = true; hit.label = m.label; hit.time = mt; hit.driveMs = driveMs; }
+    else       stops.push({ time: mt, driveMs, meal: true, label: m.label });
   }
 
-  stops.sort((a,b) => a.time - b.time);
+  stops.sort((a, b) => a.time - b.time);
   return stops;
 }
 
@@ -770,6 +796,25 @@ function backToForm() {
   document.getElementById('form-section').scrollIntoView({ behavior: 'smooth' });
 }
 
+function replanFromHere() {
+  document.getElementById('form-section').scrollIntoView({ behavior: 'smooth' });
+  // Set departure time to now
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, '0');
+  const m = String(now.getMinutes()).padStart(2, '0');
+  document.getElementById('dep').value = `${h}:${m}`;
+  // Pull current location into start field
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(async pos => {
+    _gpsCoord = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+    const name = await revGeo(_gpsCoord.lat, _gpsCoord.lon);
+    document.getElementById('start').value = name;
+  }, () => {
+    document.getElementById('start').value = '';
+    document.getElementById('start').placeholder = 'Enter your current location';
+  });
+}
+
 // ── UI helpers ─────────────────────────────────────────────
 function showStatus(msg, err = false) {
   const el = document.getElementById('status');
@@ -825,8 +870,10 @@ async function planTrip() {
     if (!route) { showStatus('Could not calculate route. Make sure both locations are drivable.', true); return; }
 
     const { coords, duration, distance } = route;
-    const meals = getMeals();
-    const stops = buildStops(depMs, nightMs, intHrs, meals, duration);
+    const meals      = getMeals();
+    const stopDurMin = parseInt(document.getElementById('stop-dur').value) || 20;
+    const stopDurMs  = stopDurMin * 60000;
+    const stops      = buildStops(depMs, nightMs, intHrs, stopDurMs, meals, duration);
 
     if (!stops.length) {
       showStatus(`No stops fit your window. The drive is ${hhmm(duration)} total — try a shorter interval or later stop-for-night time.`, true);
@@ -841,7 +888,7 @@ async function planTrip() {
     const stopData = [];
     for (let i = 0; i < stops.length; i++) {
       const s      = stops[i];
-      const pos    = routePos(coords, duration, (s.time - depMs) / 1000);
+      const pos    = routePos(coords, duration, s.driveMs / 1000);
       const tz     = tzFor(pos.lon);
       const isLast = i === stops.length - 1;
       const napInWindow = napWindow
@@ -852,6 +899,7 @@ async function planTrip() {
 
       stopData.push({
         ...s, ...pos, tz, locName, isLast, napInWindow,
+        driveRemaining: duration * 1000 - s.driveMs,
         detour: isLast ? detour : null,
         brands: isLast ? brands : null
       });
@@ -859,9 +907,12 @@ async function planTrip() {
       if (i < stops.length - 1) await pause(150);
     }
 
+    const arrivalMs = depMs + duration * 1000 + stopData.length * stopDurMs;
+    const arrivalTz = stopData.at(-1)?.tz ?? tzFor(endCoord.lon);
+
     const startName = document.getElementById('start').value.trim();
     const endName   = document.getElementById('end').value.trim();
-    renderResults(stopData, duration, distance, coords, startName, endName);
+    renderResults(stopData, duration, distance, coords, arrivalMs, arrivalTz, startName, endName);
 
   } catch (err) {
     showStatus('Something went wrong — check your connection and try again.', true);
@@ -872,8 +923,8 @@ async function planTrip() {
 }
 
 // ── Render results ─────────────────────────────────────────
-function renderResults(stopData, duration, distance, coords, startName, endName) {
-  _lastPlan = { stopData, duration, distance, coords, startName, endName };
+function renderResults(stopData, duration, distance, coords, arrivalMs, arrivalTz, startName, endName) {
+  _lastPlan = { stopData, duration, distance, coords, arrivalMs, arrivalTz, startName, endName };
   const mi = Math.round(distance / 1609.34);
 
   document.getElementById('summary').innerHTML = `
@@ -881,6 +932,7 @@ function renderResults(stopData, duration, distance, coords, startName, endName)
       <span>${hhmm(duration)}<small>total drive</small></span>
       <span>${mi} mi<small>total distance</small></span>
       <span>${stopData.length}<small>stop${stopData.length !== 1 ? 's' : ''}</small></span>
+      <span>${fmtTime(arrivalMs, arrivalTz)}<small>est. arrival</small></span>
     </div>`;
 
   let prevTZ = null;
@@ -903,6 +955,7 @@ function renderResults(stopData, duration, distance, coords, startName, endName)
           <div class="stop-info">
             <span class="badge ${badgeCls}">${badgeLbl}</span>
             <div class="stop-loc">${s.locName}</div>
+            ${s.driveRemaining > 0 ? `<div class="stop-remain">${hhmm(s.driveRemaining / 1000)} still to drive</div>` : ''}
           </div>
         </div>
         ${s.napInWindow ? '<div class="nap-banner">⚠️ This stop falls in your nap window — consider staying in the car or driving through</div>' : ''}
